@@ -5,54 +5,64 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Laravel\Passport\RefreshToken;
+use Laravel\Passport\PersonalAccessTokenResult;
 
 class AuthService
 {
     public function attemptLogin(string $identifier, string $password): array
     {
+        // Find user by username or student/faculty/staff identifier
         $user = User::where('username', $identifier)->first();
 
-        if(!$user){
-            $student = User::whereHas('student', function($query) use ($identifier){
-                $query->where('student_number', $identifier);
-            })->first();
-
-            if($student){
-                $user = $student;
-            }
+        if (!$user) {
+            $student = User::whereHas('student', fn($q) => $q->where('student_number', $identifier))->first();
+            if ($student) $user = $student;
         }
 
-        // if no user found (student, staff, and facuty), or password dont match
-        if(!$user || !Hash::check($password, $user->password)){
+        if (!$user || !Hash::check($password, $user->password)) {
             throw ValidationException::withMessages([
-                'identifier' => ['these credentials do not match our records.']
+                'identifier' => ['These credentials do not match our records.']
             ]);
         }
 
-        // detele existing tokens for user to ensure fresh tokens
-        $user->tokens->each(function ($token) {
-            $token->delete();
-        });
+        // Delete old tokens
+        $user->tokens->each(fn($token) => $token->delete());
 
-        $token = $user->createToken('authToken');
+        // Create new personal access token
+        $tokenResult = $user->createToken('AuthToken');
 
-        // profile data na naka base sa role
-        $profile = null;
-        if($user->role === 'student'){
-            $profile = $user->student;
-        } elseif($user->role === 'faculty'){
-            $profile = $user->faculty;
-        } elseif($user->role === 'staff'){
-            $profile = $user->staff;
-        }
+        $accessToken = $tokenResult->accessToken;
+
+        // For password grant, we can generate it manually if needed.
+        $refreshToken = $tokenResult->token->id; // placeholder for refresh token logic
+
+        // Profile based on role
+        $profile = match ($user->role) {
+            'student' => $user->student,
+            'faculty' => $user->faculty,
+            'staff'   => $user->staff,
+            default   => null,
+        };
 
         return [
-            'user' => $user,
-            'profile' => $profile,
-            'access_token' => $token->accessToken,
-            'refresh_token' => $token->refreshToken,
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
             'token_type' => 'Bearer',
-            'expires_at' => $token->token->expires_at->toDateTimeString(),
+            'expires_at' => $tokenResult->token->expires_at->toDateTimeString(),
         ];
+    }
+
+    public function logout(User $user): bool
+    {
+        $token = $user->token();
+
+        if ($token) {
+            $token->revoke();
+
+            return true;
+        }
+
+        return false;
     }
 }

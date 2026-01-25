@@ -23,24 +23,63 @@ class AuthController extends Controller
             'password' => 'required|string',
         ]);
 
-        try{
-            $result = $this->authService->attemptLogin(
+        try {
+            $tokens = $this->authService->attemptLogin(
                 $request->identifier,
                 $request->password
             );
 
             return response()->json([
+                'success' => true,
                 'message' => 'Login Successful',
-                'data' => $result
+                'data' => $tokens
             ]);
-        } catch (ValidationException $e){
+        } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Authentication Failed!',
                 'errors' => $e->errors()
             ], 401);
-        } catch (\Exception $e){
+        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'An unexpected error occured',
+                'message' => 'An unexpected error occurred',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function refresh(Request $request): JsonResponse
+    {
+        $request->validate([
+            'refresh_token' => 'required|string',
+        ]);
+
+        try {
+            $tokens = $this->authService->refreshToken($request->refresh_token);
+
+            return response()->json([
+                'message' => 'Token refreshed successfully',
+                'data' => $tokens
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to refresh token',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function logout(Request $request): JsonResponse
+    {
+        try {
+            $this->authService->logout($request->user());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'nagana tol'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
                 'error' => $e->getMessage()
             ], 500);
         }
