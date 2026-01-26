@@ -12,7 +12,6 @@ class AuthService
 {
     public function attemptLogin(string $identifier, string $password): array
     {
-        // Find user by username or student/faculty/staff identifier
         $user = User::where('username', $identifier)->first();
 
         if (!$user) {
@@ -26,30 +25,34 @@ class AuthService
             ]);
         }
 
-        // Delete old tokens
         $user->tokens->each(fn($token) => $token->delete());
 
-        // Create new personal access token
         $tokenResult = $user->createToken('AuthToken');
 
         $accessToken = $tokenResult->accessToken;
 
-        // For password grant, we can generate it manually if needed.
         $refreshToken = $tokenResult->token->id; // placeholder for refresh token logic
-
-        // Profile based on role
-        $profile = match ($user->role) {
-            'student' => $user->student,
-            'faculty' => $user->faculty,
-            'staff'   => $user->staff,
-            default   => null,
-        };
 
         return [
             'access_token' => $accessToken,
             'refresh_token' => $refreshToken,
             'token_type' => 'Bearer',
             'expires_at' => $tokenResult->token->expires_at->toDateTimeString(),
+        ];
+    }
+
+    public function getAuthenticatedUser(User $user): array
+    {
+        $user->load(match ($user->role) {
+            'student' => 'student',
+            'faculty' => 'faculty',
+            'staff' => 'staff',
+            default => [],
+        });
+
+        return [
+            'user' => $user,
+            'role' => $user->role,
         ];
     }
 

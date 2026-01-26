@@ -68,6 +68,16 @@ class AuthController extends Controller
         }
     }
 
+    public function me(Request $request): JsonResponse
+    {
+        $userData = $this->authService->getAuthenticatedUser($request->user());
+
+        return response()->json([
+            'success' => true,
+            'data' => $userData
+        ], 200);
+    }
+
     public function logout(Request $request): JsonResponse
     {
         try {
