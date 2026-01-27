@@ -56,6 +56,40 @@ class AuthService
         ];
     }
 
+    public function refreshToken(string $refreshTokenId): array
+    {
+        // Find the token record in the database using the ID provided as refresh_token
+        $token = \Laravel\Passport\Token::find($refreshTokenId);
+
+        if (!$token) {
+            throw new \Exception('Invalid refresh token.');
+        }
+
+        // Optional: Check if revoked
+        if ($token->revoked) {
+            throw new \Exception('Token has been revoked.');
+        }
+
+        $user = $token->user;
+
+        if (!$user) {
+            throw new \Exception('User not found.');
+        }
+
+        // Revoke the old token
+        $token->revoke();
+
+        // Create a new token
+        $newTokenResult = $user->createToken('AuthToken');
+
+        return [
+            'access_token' => $newTokenResult->accessToken,
+            'refresh_token' => $newTokenResult->token->id,
+            'token_type' => 'Bearer',
+            'expires_at' => $newTokenResult->token->expires_at->toDateTimeString(),
+        ];
+    }
+
     public function logout(User $user): bool
     {
         $token = $user->token();
