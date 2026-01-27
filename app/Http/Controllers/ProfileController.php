@@ -27,4 +27,33 @@ class ProfileController extends Controller
 
         return response()->json(['success' => true, 'data' => $data]);
     }
+
+    public function update(Request $request)
+    {
+        $user = $request->user();
+
+        $service = match($user->role){
+            'student' => new StudentProfileService(),
+            'faculty' => new FacultyProfileService(),
+            'staff' => new StaffProfileService(),
+            default => null,
+        };
+
+        if(!$service) return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+
+        $result = $service->updateProfile($user, $request->all());
+
+        if(isset($result['error'])){
+            return response()->json([
+                'success' => false,
+                'message' => $result['error']
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $result,
+            // 'message' => 'profile has been updated.'
+        ]);
+    }
 }
