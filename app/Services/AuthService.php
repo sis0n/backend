@@ -24,18 +24,24 @@ class AuthService
                 'identifier' => ['These credentials do not match our records.']
             ]);
         }
+        /*
+        $activeToken = $user->tokens()
+            ->where('revoked', false)
+            ->where('expires_at', '>', now())
+            ->exists();
 
-        $user->tokens->each(fn($token) => $token->delete());
+        if ($activeToken) {
+            throw ValidationException::withMessages([
+                'session' => ['Account is currently logged in on another device. Please log out first.']
+            ]);
+        }
+        */
 
         $tokenResult = $user->createToken('AuthToken');
-
         $accessToken = $tokenResult->accessToken;
-
-        $refreshToken = $tokenResult->token->id; // placeholder for refresh token logic
 
         return [
             'access_token' => $accessToken,
-            'refresh_token' => $refreshToken,
             'token_type' => 'Bearer',
             'expires_at' => $tokenResult->token->expires_at->toDateTimeString(),
         ];
@@ -58,14 +64,12 @@ class AuthService
 
     public function refreshToken(string $refreshTokenId): array
     {
-        // Find the token record in the database using the ID provided as refresh_token
         $token = \Laravel\Passport\Token::find($refreshTokenId);
 
         if (!$token) {
             throw new \Exception('Invalid refresh token.');
         }
 
-        // Optional: Check if revoked
         if ($token->revoked) {
             throw new \Exception('Token has been revoked.');
         }
@@ -76,10 +80,8 @@ class AuthService
             throw new \Exception('User not found.');
         }
 
-        // Revoke the old token
         $token->revoke();
 
-        // Create a new token
         $newTokenResult = $user->createToken('AuthToken');
 
         return [
