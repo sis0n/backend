@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Route;
 use Laravel\Passport\Http\Controllers\AccessTokenController;
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BookController;
+use App\Http\Controllers\CartController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
 
@@ -23,6 +25,10 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/refresh', [AuthController::class, 'refresh']);
 
 Route::middleware('auth:api')->group(function() {
+
+    Route::post('/cart/add', [CartController::class, 'add']);
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::get('/books', [BookController::class, 'index']);
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::get('/profile/update', [ProfileController::class, 'update']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
