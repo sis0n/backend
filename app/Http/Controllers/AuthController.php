@@ -18,6 +18,7 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        // dd(config('services.passport'));
         $request->validate([
             'identifier' => 'required|string',
             'password' => 'required|string',

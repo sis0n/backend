@@ -26,6 +26,7 @@ Route::post('/refresh', [AuthController::class, 'refresh']);
 
 Route::middleware('auth:api')->group(function() {
 
+    Route::delete('/cart/{id}', [CartController::class, 'destroy']);
     Route::post('/cart/add', [CartController::class, 'add']);
     Route::get('/cart', [CartController::class, 'index']);
     Route::get('/books', [BookController::class, 'index']);

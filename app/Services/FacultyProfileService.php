@@ -22,11 +22,13 @@ class FacultyProfileService
                 'u.email',
                 'u.profile_picture',
                 'u.role',
-                's.employee_id',
-                's.position',
-                's.contact',
-                's.status',
-                's.profile_updated'
+                'f.unique_faculty_id',
+                'f.college_id',
+                'f.contact',
+                'f.status',
+                'f.profile_updated',
+                'f.college_code',
+                'f.college_name'
             )
             ->first();
 

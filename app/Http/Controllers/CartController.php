@@ -27,11 +27,26 @@ class CartController extends Controller
 
     public function index(Request $request)
     {
-        $items = $this->cartService->getCartItems($request->user());
+        $cartData = $this->cartService->getCartItems($request->user());
 
         return response()->json([
             'success' => true,
-            'data' => $items
+            'data' => $cartData['items'],
+            'total_items' => $cartData['total_items']
         ]);
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        $result = $this->cartService->removeFromCart($request->user(), $id);
+
+        if(!$result['success']){
+            return response()->json([
+                'success' => false,
+                'message' => $result['message']
+            ], 400);
+        }
+
+        return response()->json($result);
     }
 }
