@@ -40,7 +40,7 @@ class CartController extends Controller
     {
         $result = $this->cartService->removeFromCart($request->user(), $id);
 
-        if(!$result['success']){
+        if (!$result['success']) {
             return response()->json([
                 'success' => false,
                 'message' => $result['message']
@@ -48,5 +48,12 @@ class CartController extends Controller
         }
 
         return response()->json($result);
+    }
+
+    public function checkout(Request $request)
+    {
+        $result = $this->cartService->checkout($request->user());
+
+        return response()->json($result, $result['success'] ? 200 : 400);
     }
 }

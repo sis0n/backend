@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class CartService
@@ -61,7 +63,7 @@ class CartService
     {
         $config = $this->getCartConfig($user);
 
-        if(!$config['id']){
+        if (!$config['id']) {
             return [
                 'items' => [],
                 'total_items' => 0
@@ -84,7 +86,7 @@ class CartService
                 'books.subject'
             )
             ->get();
-            
+
         return [
             'items' => $items,
             'total_items' => $items->count()
@@ -121,7 +123,7 @@ class CartService
     {
         $config = $this->getCartConfig($user);
 
-        if(!$config['table']){
+        if (!$config['table']) {
             return [
                 'success' => false,
                 'message' => 'invalid user role'
@@ -133,7 +135,7 @@ class CartService
             ->where($config['column'], $config['id'])
             ->exists();
 
-        if(!$exists){
+        if (!$exists) {
             return [
                 'success' => false,
                 'message' => 'item not found'
@@ -146,5 +148,70 @@ class CartService
             'success' => true,
             'message' => 'item removed from the cart'
         ];
+    }
+
+    public function checkout($user)
+    {
+        $config = $this->getCartConfig($user);
+
+        if (!$config['id']) {
+            return ['success' => false, 'message' => 'User profile not found'];
+        }
+
+        return DB::transaction(function () use ($user, $config) {
+            $cartItems = DB::table($config['table'])
+                ->join('books', "$config[table].book_id", "=", "books.book_id")
+                ->where($config['table'] . '.' . $config['column'], $config['id'])
+                ->select(
+                    'books.book_id',
+                    'books.title',
+                    'books.author',
+                    'books.accession_number',
+                    'books.call_number'
+                )
+                ->get();
+
+            if ($cartItems->isEmpty()) {
+                return ['success' => false, 'message' => 'Cart is empty'];
+            }
+
+            $transactionCode = strtoupper(Str::random(13));
+            $now = Carbon::now();
+            $expiresAt = $now->copy()->addMinutes(15);
+            // $dueDate = $now->copy()->addWeek();
+
+            $transactionId = DB::table('borrow_transactions')->insertGetId([
+                $config['column']   => $config['id'],
+                'transaction_code' => $transactionCode,
+                'generated_at'     => $now,
+                'expires_at'       => $expiresAt,
+                'status'           => 'pending',
+                'borrowed_at'      => null,
+                'due_date'         => null, 
+            ]);
+
+            foreach ($cartItems as $item) {
+                DB::table('borrow_transaction_items')->insert([
+                    'transaction_id' => $transactionId,
+                    'book_id' => $item->book_id,
+                    'returned_at' => null,
+                ]);
+            }
+
+            DB::table($config['table'])
+                ->where($config['column'], $config['id'])
+                ->delete();
+
+            return [
+                'success' => true,
+                'message' => 'Checkout successful',
+                'data' => [
+                    'transaction_code' => $transactionCode,
+                    'expires_at' => $expiresAt->toDateTimeString(),
+                    // 'due_date' => $dueDate->toDateTimeString(),
+                    'books' => $cartItems
+                ]
+            ];
+        });
     }
 }
