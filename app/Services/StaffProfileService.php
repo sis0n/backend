@@ -22,13 +22,11 @@ class StaffProfileService
                 'u.profile_picture',
                 'u.role',
                 'f.faculty_id',
-                'f.unique_faculty_id',
-                'f.college_id',
-                'f.contact',
-                'f.status',
-                'f.profile_updated',
-                'c.college_code',
-                'c.college_name'
+                's.employee_id',
+                's.position',
+                's.contact',
+                's.status',
+                's.profile_updated',
             )
             ->first();
 

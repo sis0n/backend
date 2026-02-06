@@ -27,8 +27,8 @@ class FacultyProfileService
                 'f.contact',
                 'f.status',
                 'f.profile_updated',
-                'f.college_code',
-                'f.college_name'
+                'c.college_code',
+                'c.college_name'
             )
             ->first();
 

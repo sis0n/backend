@@ -9,6 +9,7 @@ use App\Http\Controllers\BookController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\BorrowingHistoryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -26,6 +27,7 @@ Route::post('/refresh', [AuthController::class, 'refresh']);
 
 Route::middleware('auth:api')->group(function() {
 
+    Route::get('/borrowingHistory', [BorrowingHistoryController::class, 'getMyHistory']);
     Route::post('/cart/checkout', [CartController::class, 'checkout']);
     Route::delete('/cart/{id}', [CartController::class, 'destroy']);
     Route::post('/cart/add', [CartController::class, 'add']);
