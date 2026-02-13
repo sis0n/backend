@@ -50,9 +50,20 @@ class AuthService
             default => [],
         });
 
+        $profileData = null;
+        if ($user->role === 'student' && $user->student) {
+            $profileData = ['student_number' => $user->student->student_number];
+        } elseif ($user->role === 'faculty' && $user->faculty) {
+            $profileData = ['unique_faculty_id' => $user->faculty->unique_faculty_id];
+        } elseif ($user->role === 'staff' && $user->staff) {
+            $profileData = ['employee_id' => $user->staff->employee_id];
+        }
+
         return [
-            'user' => $user,
+            'full_name' => trim("{$user->first_name} {$user->middle_name} {$user->last_name} {$user->suffix}"),
+            'profile_picture' => $user->profile_picture ? url($user->profile_picture) : null,
             'role' => $user->role,
+            'profile_details' => $profileData
         ];
     }
 
