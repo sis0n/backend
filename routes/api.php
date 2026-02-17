@@ -36,7 +36,7 @@ Route::middleware('auth:api')->group(function() {
     Route::get('/cart', [CartController::class, 'index']);
     Route::get('/books', [BookController::class, 'index']);
     Route::get('/profile', [ProfileController::class, 'show']);
-    Route::get('/profile/update', [ProfileController::class, 'update']);
+    Route::post('/profile/update', [ProfileController::class, 'update']);
     Route::get('/dashboard', [DashboardController::class, 'index']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);

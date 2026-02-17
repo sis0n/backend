@@ -21,7 +21,7 @@ class StaffProfileService
                 'u.email',
                 'u.profile_picture',
                 'u.role',
-                'f.faculty_id',
+                // 'f.faculty_id',
                 's.employee_id',
                 's.position',
                 's.contact',
@@ -39,32 +39,38 @@ class StaffProfileService
 
     public function updateProfile($user, $data, $profilePic = null)
     {
-        $profilePicPath = $user->profile_picture;
-        if ($profilePic) {
-            $profilePicPath = $profilePic->store('profile_pictures', 'public');
+        $staff = DB::table('staff')->where('user_id', $user->user_id)->first();
+
+        if (!$staff) {
+            return ['status' => 'error', 'message' => 'Staff record not found'];
         }
 
-        DB::transaction(function () use ($user, $data, $profilePicPath) {
-            // 1. Update Users Table
-            DB::table('users')->where('user_id', $user->user_id)->update([
-                'first_name'      => $data['first_name'],
-                'middle_name'     => $data['middle_name'] ?? null,
-                'last_name'       => $data['last_name'],
-                'suffix'          => $data['suffix'] ?? null,
-                'email'           => $data['email'], // Idagdag ito para sa account consistency
-                'profile_picture' => $profilePicPath,
-                'updated_at'      => now(),
-            ]);
 
-            // 2. Update Staff Table
-            DB::table('staff')->where('user_id', $user->user_id)->update([
-                'position'        => $data['position'],
-                'contact'         => $data['contact'],
-                'profile_updated' => 1,
-                'updated_at'      => now(), // Optional pero maganda para sa audit
-            ]);
-        });
+        $profilePicPath = $profilePic ? $profilePic : $user->profile_picture;
 
-        return ['status' => 'success'];
+        try {
+            DB::transaction(function () use ($user, $data, $profilePicPath, $staff) {
+                DB::table('users')->where('user_id', $user->user_id)->update([
+                    'first_name'      => $data['first_name'] ?? $user->first_name,
+                    'middle_name'     => $data['middle_name'] ?? $user->middle_name,
+                    'last_name'       => $data['last_name'] ?? $user->last_name,
+                    'suffix'          => $data['suffix'] ?? $user->suffix,
+                    'email'           => $data['email'] ?? $user->email,
+                    'profile_picture' => $profilePicPath,
+                    'updated_at'      => now(),
+                ]);
+
+                DB::table('staff')->where('user_id', $user->user_id)->update([
+                    'position'        => $data['position'] ?? $staff->position,
+                    'contact'         => $data['contact'] ?? $staff->contact,
+                    'profile_updated' => 1,
+                    'updated_at'      => now(),
+                ]);
+            });
+
+            return ['status' => 'success'];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Update failed: ' . $e->getMessage()];
+        }
     }
 }

@@ -49,69 +49,56 @@ class StudentProfileService
 
     public function updateProfile($user, $data, $regFile = null, $profilePic = null)
     {
-        // 1. Kunin ang student record base sa user_id
         $student = DB::table('students')->where('user_id', $user->user_id)->first();
 
         if (!$student) {
-            return [
-                'status' => 'error',
-                'message' => 'Student record not found'
-            ];
+            return ['status' => 'error', 'message' => 'Student record not found'];
         }
 
-        // 2. STRICT LOCK: Pag 1 na ang profile_updated, bounce na agad
         if ($student->profile_updated == 1) {
-            return [
-                'status' => 'error',
-                'message' => 'Profile is already locked. Updates are no longer allowed.'
-            ];
+            return ['status' => 'error', 'message' => 'Profile is already locked.'];
         }
 
         try {
-            // 3. File Handling (Dito lang ito gagawin kapag hindi pa locked)
             $regFormPath = $student->registration_form;
             if ($regFile) {
-                $regFormPath = $regFile->store('registration_forms', 'public');
+                $regFileName = 'reg_' . $user->user_id . '_' . time() . '.' . $regFile->getClientOriginalExtension();
+                $regFile->move(public_path('uploads/reg_forms'), $regFileName);
+                $regFormPath = 'uploads/reg_forms/' . $regFileName;
             }
 
             $profilePicPath = $user->profile_picture;
             if ($profilePic) {
-                $profilePicPath = $profilePic->store('profile_pictures', 'public');
+                $picFileName = 'profile_' . $user->user_id . '_' . time() . '.' . $profilePic->getClientOriginalExtension();
+                $profilePic->move(public_path('uploads/profile_images'), $picFileName);
+                $profilePicPath = 'uploads/profile_images/' . $picFileName;
             }
 
-            // 4. Database Transaction
-            DB::transaction(function () use ($user, $data, $regFormPath, $profilePicPath) {
-                // Update Users Table
+            DB::transaction(function () use ($user, $data, $regFormPath, $profilePicPath, $student) {
                 DB::table('users')->where('user_id', $user->user_id)->update([
-                    'first_name'      => $data['first_name'],
-                    'middle_name'     => $data['middle_name'] ?? null,
-                    'last_name'       => $data['last_name'],
-                    'suffix'          => $data['suffix'] ?? null,
-                    'email'           => $data['email'],
-                    'profile_picture' => $profilePicPath,
+                    'first_name'      => $data['first_name'] ?? $user->first_name,
+                    'middle_name'     => $data['middle_name'] ?? $user->middle_name,
+                    'last_name'       => $data['last_name'] ?? $user->last_name,
+                    'suffix'          => $data['suffix'] ?? $user->suffix,
+                    'email'           => $data['email'] ?? $user->email,
+                    'profile_picture' => $profilePicPath, 
                     'updated_at'      => now(),
                 ]);
 
-                // Update Students Table and LOCK
                 DB::table('students')->where('user_id', $user->user_id)->update([
-                    'course_id'         => $data['course_id'],
-                    'year_level'        => $data['year_level'],
-                    'section'           => $data['section'],
-                    'contact'           => $data['contact'],
-                    'registration_form' => $regFormPath,
-                    'profile_updated'   => 1, // <--- Eto ang susi sa pag-lock
+                    'course_id'         => $data['course_id'] ?? $student->course_id,
+                    'year_level'        => $data['year_level'] ?? $student->year_level,
+                    'section'           => $data['section'] ?? $student->section,
+                    'contact'           => $data['contact'] ?? $student->contact,
+                    'registration_form' => $regFormPath, 
+                    'profile_updated'   => 1,
+                    'updated_at'        => now(),
                 ]);
             });
 
-            return [
-                'status' => 'success',
-                'message' => 'Profile updated and locked successfully'
-            ];
+            return ['status' => 'success', 'message' => 'Profile updated and locked successfully'];
         } catch (\Exception $e) {
-            return [
-                'status' => 'error',
-                'message' => 'Something went wrong: ' . $e->getMessage()
-            ];
+            return ['status' => 'error', 'message' => 'Something went wrong: ' . $e->getMessage()];
         }
     }
 }

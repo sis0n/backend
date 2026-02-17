@@ -45,29 +45,37 @@ class FacultyProfileService
 
     public function updateProfile($user, $data, $profilePic = null)
     {
-        $profilePicPath = $user->profile_picture;
-        if ($profilePic) {
-            $profilePicPath = $profilePic->store('profile_pictures', 'public');
+        $faculty = DB::table('faculty')->where('user_id', $user->user_id)->first();
+
+        if (!$faculty) {
+            return ['status' => 'error', 'message' => 'Faculty record not found'];
         }
 
-        DB::transaction(function () use ($user, $data, $profilePicPath) {
-            DB::table('users')->where('user_id', $user->user_id)->update([
-                'first_name' => $data['first_name'],
-                'middle_name' => $data['middle_name'] ?? null,
-                'last_name' => $data['last_name'],
-                'suffix' => $data['suffix'] ?? null,
-                'email' => $data['email'], 
-                'profile_picture' => $profilePicPath,
-                'updated_at' => now(),
-            ]);
+        $profilePicPath = $profilePic ? $profilePic : $user->profile_picture;
 
-            DB::table('faculty')->where('user_id', $user->user_id)->update([
-                'college_id' => $data['college_id'],
-                'contact' => $data['contact'],
-                'profile_updated' => 1,
-                'updated_at' => now(), 
-            ]);
-        });
-        return ['status' => 'success'];
+        try {
+            DB::transaction(function () use ($user, $data, $profilePicPath, $faculty) {
+                DB::table('users')->where('user_id', $user->user_id)->update([
+                    'first_name'      => $data['first_name'] ?? $user->first_name,
+                    'middle_name'     => $data['middle_name'] ?? $user->middle_name,
+                    'last_name'       => $data['last_name'] ?? $user->last_name,
+                    'suffix'          => $data['suffix'] ?? $user->suffix,
+                    'email'           => $data['email'] ?? $user->email,
+                    'profile_picture' => $profilePicPath,
+                    'updated_at'      => now(),
+                ]);
+
+                DB::table('faculty')->where('user_id', $user->user_id)->update([
+                    'college_id'      => $data['college_id'] ?? $faculty->college_id,
+                    'contact'         => $data['contact'] ?? $faculty->contact,
+                    'profile_updated' => 1, 
+                    'updated_at'      => now(),
+                ]);
+            });
+
+            return ['status' => 'success'];
+        } catch (\Exception $e) {
+            return ['status' => 'error', 'message' => 'Update failed: ' . $e->getMessage()];
+        }
     }
 }

@@ -32,18 +32,36 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        $service = match($user->role){
+        if ($request->hasFile('profile_picture')) {
+            $request->validate([
+                'profile_picture' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            ]);
+
+            $file = $request->file('profile_picture');
+            $filename = 'profile_' . $user->user_id . '_' . time() . '.' . $file->getClientOriginalExtension();
+
+            $file->move(public_path('uploads/profile_images'), $filename);
+
+            if ($user->profile_picture && file_exists(public_path($user->profile_picture))) {
+                @unlink(public_path($user->profile_picture));
+            }
+
+            $user->profile_picture = 'uploads/profile_images/' . $filename;
+            $user->save();
+        }
+
+        $service = match ($user->role) {
             'student' => new StudentProfileService(),
             'faculty' => new FacultyProfileService(),
             'staff' => new StaffProfileService(),
             default => null,
         };
 
-        if(!$service) return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        if (!$service) return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
 
         $result = $service->updateProfile($user, $request->all());
 
-        if(isset($result['error'])){
+        if (isset($result['error'])) {
             return response()->json([
                 'success' => false,
                 'message' => $result['error']
