@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use App\Services\AuthService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\String\TruncateMode;
 
 class AuthController extends Controller
 {
@@ -93,6 +96,33 @@ class AuthController extends Controller
                 'success' => false,
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => 'required',
+            'new_password' => 'required|min:8|confirmed',
+        ]);
+
+        
+        try{
+            $this->authService->changePassword(
+                $request->user(),
+                $request->current_password,
+                $request->new_password,
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'password has been updated',
+            ]);
+        } catch (\Exception $e){
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 400);
         }
     }
 }

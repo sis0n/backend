@@ -5,8 +5,7 @@ namespace App\Services;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-use Laravel\Passport\RefreshToken;
-use Laravel\Passport\PersonalAccessTokenResult;
+use Illuminate\Support\Facades\DB;
 
 class AuthService
 {
@@ -99,6 +98,27 @@ class AuthService
             'token_type' => 'Bearer',
             'expires_at' => $newTokenResult->token->expires_at->toDateTimeString(),
         ];
+    }
+
+    public function updatePassword($userId, $hashedPassword)
+    {
+        return DB::table('users')
+            ->where('user_id', $userId)
+            ->update([
+                'password'   => $hashedPassword,
+                'updated_at' => now()
+            ]);
+    }
+
+    public function changePassword($user, $currentPassword, $newPassword)
+    {
+        if (!Hash::check($currentPassword, $user->password)) {
+            throw new \Exception("The current password you entered is incorrect.");
+        }
+
+        $hashedPassword = Hash::make($newPassword);
+
+        return $this->updatePassword($user->user_id, $hashedPassword);
     }
 
     public function logout(User $user): bool

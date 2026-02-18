@@ -13,7 +13,7 @@ class StudentProfileService
             ->leftJoin('courses as c', 's.course_id', '=', 'c.course_id')
             ->where('u.user_id', $user->user_id)
             ->select(
-                'u.user_id',
+                // 'u.user_id',
                 'u.username',
                 'u.first_name',
                 'u.middle_name',
@@ -21,15 +21,15 @@ class StudentProfileService
                 'u.suffix',
                 'u.email',
                 'u.profile_picture',
-                'u.role',
-                's.student_id',
+                // 'u.role',
+                // 's.student_id',
                 's.student_number',
                 's.course_id',
                 's.year_level',
                 's.section',
                 's.contact',
                 's.registration_form',
-                's.profile_updated',
+                // 's.profile_updated',
                 'c.course_code',
                 'c.course_title'
             )
@@ -55,8 +55,11 @@ class StudentProfileService
             return ['status' => 'error', 'message' => 'Student record not found'];
         }
 
-        if ($student->profile_updated == 1) {
-            return ['status' => 'error', 'message' => 'Profile is already locked.'];
+        if ($student->profile_updated == 1 && $student->can_edit_profile == 0) {
+            return [
+                'status' => 'error',
+                'message' => 'Profile is locked. Please contact Admin to enable editing.'
+            ];
         }
 
         try {
@@ -81,7 +84,7 @@ class StudentProfileService
                     'last_name'       => $data['last_name'] ?? $user->last_name,
                     'suffix'          => $data['suffix'] ?? $user->suffix,
                     'email'           => $data['email'] ?? $user->email,
-                    'profile_picture' => $profilePicPath, 
+                    'profile_picture' => $profilePicPath,
                     'updated_at'      => now(),
                 ]);
 
@@ -90,9 +93,9 @@ class StudentProfileService
                     'year_level'        => $data['year_level'] ?? $student->year_level,
                     'section'           => $data['section'] ?? $student->section,
                     'contact'           => $data['contact'] ?? $student->contact,
-                    'registration_form' => $regFormPath, 
+                    'registration_form' => $regFormPath,
                     'profile_updated'   => 1,
-                    'updated_at'        => now(),
+                    // 'updated_at'        => now(),
                 ]);
             });
 

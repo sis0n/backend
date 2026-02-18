@@ -28,6 +28,7 @@ Route::post('/refresh', [AuthController::class, 'refresh']);
 
 Route::middleware('auth:api')->group(function() {
 
+    Route::post('/changePassword', [AuthController::class, 'changePassword']);
     Route::get('/attendance/history', [AttendanceController::class, 'getHistory']);
     Route::get('/borrowingHistory', [BorrowingHistoryController::class, 'getMyHistory']);
     Route::post('/cart/checkout', [CartController::class, 'checkout']);
