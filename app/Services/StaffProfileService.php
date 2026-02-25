@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class StaffProfileService
 {
@@ -21,7 +22,6 @@ class StaffProfileService
                 'u.email',
                 'u.profile_picture',
                 'u.role',
-                // 'f.faculty_id',
                 's.employee_id',
                 's.position',
                 's.contact',
@@ -45,10 +45,20 @@ class StaffProfileService
             return ['status' => 'error', 'message' => 'Staff record not found'];
         }
 
-
-        $profilePicPath = $profilePic ? $profilePic : $user->profile_picture;
+        $profilePicPath = $user->profile_picture;
 
         try {
+            if ($profilePic) {
+                // Delete old picture if it exists
+                if ($profilePicPath) {
+                    Storage::disk('public')->delete($profilePicPath);
+                }
+
+                $fileName = 'staff_' . $user->user_id . '_' . time() . '.' . $profilePic->getClientOriginalExtension();
+                $profilePic->storeAs('uploads/profile_images', $fileName, 'public');
+                $profilePicPath = 'uploads/profile_images/' . $fileName;
+            }
+
             DB::transaction(function () use ($user, $data, $profilePicPath, $staff) {
                 DB::table('users')->where('user_id', $user->user_id)->update([
                     'first_name'      => $data['first_name'] ?? $user->first_name,

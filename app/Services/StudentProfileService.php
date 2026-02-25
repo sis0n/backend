@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class StudentProfileService
 {
@@ -13,7 +14,6 @@ class StudentProfileService
             ->leftJoin('courses as c', 's.course_id', '=', 'c.course_id')
             ->where('u.user_id', $user->user_id)
             ->select(
-                // 'u.user_id',
                 'u.username',
                 'u.first_name',
                 'u.middle_name',
@@ -21,15 +21,13 @@ class StudentProfileService
                 'u.suffix',
                 'u.email',
                 'u.profile_picture',
-                // 'u.role',
-                // 's.student_id',
                 's.student_number',
                 's.course_id',
                 's.year_level',
                 's.section',
                 's.contact',
                 's.registration_form',
-                // 's.profile_updated',
+                's.can_edit_profile',
                 'c.course_code',
                 'c.course_title'
             )
@@ -37,7 +35,7 @@ class StudentProfileService
 
         if (!$result) return ['error' => 'Student not found'];
 
-        if ($result['course_code'] && $result['course_title']) {
+        if (!empty($result['course_code']) && !empty($result['course_title'])) {
             $result['course_full_name'] = $result['course_code'] . ' - ' . $result['course_title'];
         }
 
@@ -65,15 +63,23 @@ class StudentProfileService
         try {
             $regFormPath = $student->registration_form;
             if ($regFile) {
+                if ($regFormPath) {
+                    Storage::disk('public')->delete($regFormPath);
+                }
+                
                 $regFileName = 'reg_' . $user->user_id . '_' . time() . '.' . $regFile->getClientOriginalExtension();
-                $regFile->move(public_path('uploads/reg_forms'), $regFileName);
+                $regFile->storeAs('uploads/reg_forms', $regFileName, 'public');
                 $regFormPath = 'uploads/reg_forms/' . $regFileName;
             }
 
             $profilePicPath = $user->profile_picture;
             if ($profilePic) {
+                if ($profilePicPath) {
+                    Storage::disk('public')->delete($profilePicPath);
+                }
+
                 $picFileName = 'profile_' . $user->user_id . '_' . time() . '.' . $profilePic->getClientOriginalExtension();
-                $profilePic->move(public_path('uploads/profile_images'), $picFileName);
+                $profilePic->storeAs('uploads/profile_images', $picFileName, 'public');
                 $profilePicPath = 'uploads/profile_images/' . $picFileName;
             }
 
@@ -94,8 +100,8 @@ class StudentProfileService
                     'section'           => $data['section'] ?? $student->section,
                     'contact'           => $data['contact'] ?? $student->contact,
                     'registration_form' => $regFormPath,
-                    'profile_updated'   => 1,
-                    // 'updated_at'        => now(),
+                    'profile_updated'   => 1, 
+                    'can_edit_profile'  => 0,
                 ]);
             });
 
@@ -105,3 +111,4 @@ class StudentProfileService
         }
     }
 }
+

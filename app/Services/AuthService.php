@@ -100,27 +100,6 @@ class AuthService
         ];
     }
 
-    public function updatePassword($userId, $hashedPassword)
-    {
-        return DB::table('users')
-            ->where('user_id', $userId)
-            ->update([
-                'password'   => $hashedPassword,
-                'updated_at' => now()
-            ]);
-    }
-
-    public function changePassword($user, $currentPassword, $newPassword)
-    {
-        if (!Hash::check($currentPassword, $user->password)) {
-            throw new \Exception("The current password you entered is incorrect.");
-        }
-
-        $hashedPassword = Hash::make($newPassword);
-
-        return $this->updatePassword($user->user_id, $hashedPassword);
-    }
-
     public function logout(User $user): bool
     {
         $token = $user->token();
@@ -132,5 +111,16 @@ class AuthService
         }
 
         return false;
+    }
+
+    public function changePassword(User $user, string $currentPassword, string $newPassword): void
+    {
+        if (!Hash::check($currentPassword, $user->password)) {
+            throw new \Exception('The current password provided is incorrect.');
+        }
+
+        $user->update([
+            'password' => Hash::make($newPassword)
+        ]);
     }
 }

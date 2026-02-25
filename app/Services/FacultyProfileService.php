@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class FacultyProfileService
 {
@@ -13,7 +14,6 @@ class FacultyProfileService
             ->leftJoin('colleges as c', 'f.college_id', '=', 'c.college_id')
             ->where('u.user_id', $user->user_id)
             ->select(
-                'u.user_id',
                 'u.username',
                 'u.first_name',
                 'u.middle_name',
@@ -34,7 +34,7 @@ class FacultyProfileService
 
         if (!$result) return ['error' => 'Faculty not found'];
 
-        if ($result['college_code'] && $result['college_name']) {
+        if (!empty($result['college_code']) && !empty($result['college_name'])) {
             $result['college_full_name'] = $result['college_code'] . ' - ' . $result['college_name'];
         }
 
@@ -51,9 +51,20 @@ class FacultyProfileService
             return ['status' => 'error', 'message' => 'Faculty record not found'];
         }
 
-        $profilePicPath = $profilePic ? $profilePic : $user->profile_picture;
+        $profilePicPath = $user->profile_picture;
 
         try {
+            if ($profilePic) {
+                // Delete old picture if it exists
+                if ($profilePicPath) {
+                    Storage::disk('public')->delete($profilePicPath);
+                }
+
+                $fileName = 'faculty_' . $user->user_id . '_' . time() . '.' . $profilePic->getClientOriginalExtension();
+                $profilePic->storeAs('uploads/profile_images', $fileName, 'public');
+                $profilePicPath = 'uploads/profile_images/' . $fileName;
+            }
+
             DB::transaction(function () use ($user, $data, $profilePicPath, $faculty) {
                 DB::table('users')->where('user_id', $user->user_id)->update([
                     'first_name'      => $data['first_name'] ?? $user->first_name,

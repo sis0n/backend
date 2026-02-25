@@ -6,19 +6,23 @@ use Illuminate\Http\Request;
 use App\Services\StudentProfileService;
 use App\Services\FacultyProfileService;
 use App\Services\StaffProfileService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Validator;
 
 class ProfileController extends Controller
 {
-    public function show(Request $request)
+    /**
+     * Display the authenticated user's profile.
+     */
+    public function show(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        // Dito natin pipiliin ang tamang Service
         $data = match ($user->role) {
             'student' => (new StudentProfileService())->getProfile($user),
             'faculty' => (new FacultyProfileService())->getProfile($user),
             'staff'   => (new StaffProfileService())->getProfile($user),
-            default   => ['error' => 'Invalid Role'],
+            default   => ['error' => 'Invalid role assigned to user.'],
         };
 
         if (isset($data['error'])) {
@@ -28,50 +32,63 @@ class ProfileController extends Controller
         return response()->json(['success' => true, 'data' => $data]);
     }
 
-    public function update(Request $request)
+    /**
+     * Update the authenticated user's profile.
+     */
+    public function update(Request $request): JsonResponse
     {
         $user = $request->user();
 
-        if ($request->hasFile('profile_picture')) {
-            $request->validate([
+        if ($user->role === 'student') {
+            $validator = Validator::make($request->all(), [
+                'course_id' => 'required|integer',
+                'year_level' => 'required|integer',
+                'section' => 'required|string|max:50',
+                'email' => 'required|email|max:100',
+                'contact' => 'required|string|max:20',
+                'profile_picture' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+                'registration_form' => 'required|mimes:pdf,jpeg,png,jpg|max:5120',
+            ]);
+        } else {
+            $validator = Validator::make($request->all(), [
+                'email' => 'required|email|max:100',
+                'contact' => 'required|string|max:20',
                 'profile_picture' => 'required|image|mimes:jpeg,png,jpg|max:2048',
             ]);
+        }
 
-            $file = $request->file('profile_picture');
-            $filename = 'profile_' . $user->user_id . '_' . time() . '.' . $file->getClientOriginalExtension();
-
-            $file->move(public_path('uploads/profile_images'), $filename);
-
-            if ($user->profile_picture && file_exists(public_path($user->profile_picture))) {
-                @unlink(public_path($user->profile_picture));
-            }
-
-            $user->profile_picture = 'uploads/profile_images/' . $filename;
-            $user->save();
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors'  => $validator->errors()
+            ], 422);
         }
 
         $service = match ($user->role) {
             'student' => new StudentProfileService(),
             'faculty' => new FacultyProfileService(),
-            'staff' => new StaffProfileService(),
-            default => null,
+            'staff'   => new StaffProfileService(),
+            default   => null,
         };
 
         if (!$service) return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
 
-        $result = $service->updateProfile($user, $request->all());
+        $profilePic = $request->file('profile_picture');
+        $regFile = $request->file('registration_form');
 
-        if (isset($result['error'])) {
-            return response()->json([
-                'success' => false,
-                'message' => $result['error']
-            ], 400);
+        if ($user->role === 'student') {
+            $result = $service->updateProfile($user, $request->all(), $regFile, $profilePic);
+        } else {
+            $result = $service->updateProfile($user, $request->all(), $profilePic);
+        }
+
+        if (isset($result['status']) && $result['status'] === 'error') {
+            return response()->json(['success' => false, 'message' => $result['message']], 400);
         }
 
         return response()->json([
             'success' => true,
-            'data' => $result,
-            // 'message' => 'profile has been updated.'
+            'message' => 'Profile updated successfully.'
         ]);
     }
 }
