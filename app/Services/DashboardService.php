@@ -105,7 +105,7 @@ class DashboardService
             ->join('borrow_transactions as trans', 'items.transaction_id', '=', 'trans.transaction_id')
             ->join('books', 'items.book_id', '=', 'books.book_id')
             ->where("trans.$fk", $id)
-            ->where('items.status', 'borrowed')
+            ->whereIn('items.status', ['borrowed', 'overdue']) // Included overdue status
             ->select('books.title', 'books.author', 'trans.due_date', 'items.status', 'books.accession_number')
             ->get();
     }

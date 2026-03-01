@@ -5,6 +5,8 @@ namespace App\Services;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
+use Illuminate\Support\Facades\Storage;
 
 class CartService
 {
@@ -15,7 +17,6 @@ class CartService
     {
         $userId = $user->user_id;
 
-        // check current cart limit
         $currentCartCount = DB::table('carts')
             ->where('user_id', $userId)
             ->whereNull('checked_out_at')
@@ -25,7 +26,6 @@ class CartService
             return ['status' => 'error', 'message' => 'Limit reached! You can only add up to 5 books in your cart.'];
         }
 
-        // chgeck book availability
         $book = DB::table('books')->where('book_id', $bookId)->first();
         if (!$book || $book->availability !== 'available' || $book->quantity <= 0) {
             return ['status' => 'error', 'message' => 'This book is currently unavailable for borrowing.'];
@@ -41,7 +41,6 @@ class CartService
             return ['status' => 'error', 'message' => 'This book is already in your cart.'];
         }
 
-        // insert into centralized carts table
         DB::table('carts')->insert([
             'user_id' => $userId,
             'book_id' => $bookId,
@@ -80,7 +79,7 @@ class CartService
     }
 
     /**
-     * Remove item from centralized cart.
+     * Remove item from cart.
      */
     public function removeFromCart($user, $cartId)
     {
@@ -97,7 +96,7 @@ class CartService
     }
 
     /**
-     * Checkout centralized cart and create a transaction.
+     * Checkout process with QR code generation and Audit Logging.
      */
     public function checkout($user)
     {
@@ -107,7 +106,6 @@ class CartService
             return ['success' => false, 'message' => 'User profile record not found.'];
         }
 
-        // profile completion check
         $validation = $this->isProfileComplete($profileData['profile'], $user->role);
         if (!$validation['is_complete']) {
             return [
@@ -128,7 +126,6 @@ class CartService
                 return ['success' => false, 'message' => 'Cart is empty'];
             }
 
-            // check book availability in real time
             foreach ($cartItems as $item) {
                 $isUnavailable = DB::table('borrow_transaction_items')
                     ->join('borrow_transactions', 'borrow_transaction_items.transaction_id', '=', 'borrow_transactions.transaction_id')
@@ -142,7 +139,6 @@ class CartService
                 }
             }
 
-            // check existing pending transactions for this specific borrower
             $existingTransaction = DB::table('borrow_transactions')
                 ->where($profileData['column'], $profileData['id'])
                 ->where('status', 'pending')
@@ -158,7 +154,7 @@ class CartService
                 ];
             }
 
-            $now = Carbon::now();
+            $now = Carbon::now('Asia/Manila');
             $expiresAt = $now->copy()->addMinutes(15);
             $dueDate = $now->copy()->addDays(3);
 
@@ -185,7 +181,28 @@ class CartService
                 );
             }
 
+            $qrFolder = 'uploads/qrcodes';
+            $qrFileName = $transactionCode . '.svg';
+            $qrPath = $qrFolder . '/' . $qrFileName;
+
+            if (!Storage::disk('public')->exists($qrFolder)) {
+                Storage::disk('public')->makeDirectory($qrFolder);
+            }
+
+            $qrCodeImage = QrCode::size(300)->errorCorrection('H')->generate($transactionCode);
+            Storage::disk('public')->put($qrPath, $qrCodeImage);
+
+            DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['qrcode' => $qrPath]);
+
             DB::table('carts')->where('user_id', $user->user_id)->delete();
+
+            AuditTrailService::log(
+                $user->user_id,
+                'CHECKOUT',
+                'TRANSACTIONS',
+                $transactionCode,
+                "User checked out {$newItemsCount} book(s). Status: Pending Approval. Transaction Code: {$transactionCode}"
+            );
 
             return [
                 'success' => true,
@@ -193,9 +210,75 @@ class CartService
                 'data' => [
                     'transaction_code' => $transactionCode,
                     'expires_at'       => $expiresAt->toDateTimeString(),
+                    'qrcode_url'       => url('storage/' . $qrPath),
                 ]
             ];
         });
+    }
+
+    /**
+     * Check current pending transaction status for the user.
+     */
+    public function checkStatus($user): array
+    {
+        $now = Carbon::now('Asia/Manila');
+        
+        // Expire old transactions
+        DB::table('borrow_transactions')
+            ->where('status', 'pending')
+            ->where('expires_at', '<', $now)
+            ->update(['status' => 'expired']);
+
+        $profileData = $this->getUserProfileData($user);
+        if (!$profileData['id']) {
+            return ['success' => true, 'status' => 'none'];
+        }
+
+        $pending = DB::table('borrow_transactions')
+            ->where($profileData['column'], $profileData['id'])
+            ->where('status', 'pending')
+            ->first();
+
+        if (!$pending) {
+            return ['success' => true, 'status' => 'none'];
+        }
+
+        $fullName = trim("{$user->first_name} {$user->middle_name} {$user->last_name} {$user->suffix}");
+        $userData = [
+            'name' => $fullName,
+            'role' => $user->role,
+        ];
+
+        // Specific details based on role
+        if ($user->role === 'student') {
+            $course = DB::table('courses')->where('course_id', $profileData['profile']->course_id)->first();
+            $userData['student_number'] = $profileData['profile']->student_number;
+            $userData['year_level']     = $profileData['profile']->year_level;
+            $userData['section']        = $profileData['profile']->section;
+            $userData['course']         = $course ? $course->course_code : 'N/A';
+        } elseif ($user->role === 'faculty') {
+            $userData['unique_id'] = $profileData['profile']->unique_faculty_id;
+        } elseif ($user->role === 'staff') {
+            $userData['employee_id'] = $profileData['profile']->employee_id;
+            $userData['position']    = $profileData['profile']->position;
+        }
+
+        $books = DB::table('borrow_transaction_items as items')
+            ->join('books', 'items.book_id', '=', 'books.book_id')
+            ->where('items.transaction_id', $pending->transaction_id)
+            ->select('books.book_id', 'books.title', 'books.author', 'books.accession_number', 'books.call_number')
+            ->get();
+
+        return [
+            'success'          => true,
+            'status'           => 'pending',
+            'transaction_code' => $pending->transaction_code,
+            'generated_at'     => $pending->generated_at,
+            'expires_at'       => $pending->expires_at,
+            'qrcode_url'       => $pending->qrcode ? url('storage/' . $pending->qrcode) : null,
+            'user_details'     => $userData,
+            'books'            => $books
+        ];
     }
 
     /**

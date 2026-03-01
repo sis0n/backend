@@ -56,4 +56,11 @@ class CartController extends Controller
 
         return response()->json($result, $result['success'] ? 200 : 400);
     }
+
+    public function checkStatus(Request $request)
+    {
+        $result = $this->cartService->checkStatus($request->user());
+
+        return response()->json($result);
+    }
 }
