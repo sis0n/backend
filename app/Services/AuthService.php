@@ -32,6 +32,9 @@ class AuthService
 
         $refreshToken = $tokenResult->token->id; // placeholder for refresh token logic
 
+        // LOG ACTION: LOGIN
+        AuditTrailService::log($user->user_id, 'LOGIN', 'AUTH', null, 'User logged in successfully via Mobile App.');
+
         return [
             'access_token' => $accessToken,
             'refresh_token' => $refreshToken,
@@ -105,6 +108,9 @@ class AuthService
         $token = $user->token();
 
         if ($token) {
+            // LOG ACTION: LOGOUT
+            AuditTrailService::log($user->user_id, 'LOGOUT', 'AUTH', null, 'User logged out.');
+
             $token->revoke();
 
             return true;
@@ -122,5 +128,8 @@ class AuthService
         $user->update([
             'password' => Hash::make($newPassword)
         ]);
+
+        // LOG ACTION: UPDATE PASSWORD
+        AuditTrailService::log($user->user_id, 'UPDATE', 'USERS', $user->user_id, 'User changed their password.');
     }
 }

@@ -9,22 +9,15 @@ use Illuminate\Support\Facades\DB;
 class CartService
 {
     /**
-     * add a book to the users specific cart table based on their role
+     * Add a book to the centralized 'carts' table.
      */
     public function addToCart($user, $bookId)
     {
-        // 1. Get dynamic table and ID config
-        $config = $this->getCartConfig($user);
-        $tableName = $config['table'];
-        $idColumn = $config['column'];
-        $ownerId = $config['id'];
+        $userId = $user->user_id;
 
-        if (!$ownerId) {
-            return ['status' => 'error', 'message' => 'Profile record not found for this user.'];
-        }
-
-        $currentCartCount = DB::table($tableName)
-            ->where($idColumn, $ownerId)
+        // check current cart limit
+        $currentCartCount = DB::table('carts')
+            ->where('user_id', $userId)
             ->whereNull('checked_out_at')
             ->count();
 
@@ -32,13 +25,14 @@ class CartService
             return ['status' => 'error', 'message' => 'Limit reached! You can only add up to 5 books in your cart.'];
         }
 
+        // chgeck book availability
         $book = DB::table('books')->where('book_id', $bookId)->first();
         if (!$book || $book->availability !== 'available' || $book->quantity <= 0) {
             return ['status' => 'error', 'message' => 'This book is currently unavailable for borrowing.'];
         }
 
-        $exists = DB::table($tableName)
-            ->where($idColumn, $ownerId)
+        $exists = DB::table('carts')
+            ->where('user_id', $userId)
             ->where('book_id', $bookId)
             ->whereNull('checked_out_at')
             ->exists();
@@ -47,8 +41,9 @@ class CartService
             return ['status' => 'error', 'message' => 'This book is already in your cart.'];
         }
 
-        DB::table($tableName)->insert([
-            $idColumn => $ownerId,
+        // insert into centralized carts table
+        DB::table('carts')->insert([
+            'user_id' => $userId,
             'book_id' => $bookId,
             'added_at' => now(),
         ]);
@@ -57,26 +52,17 @@ class CartService
     }
 
     /**
-     * fetch all items in the users cart
+     * Fetch items in the user's cart.
      */
     public function getCartItems($user)
     {
-        $config = $this->getCartConfig($user);
-
-        if (!$config['id']) {
-            return [
-                'items' => [],
-                'total_items' => 0
-            ];
-        }
-
-        $items = DB::table($config['table'])
-            ->join('books', "{$config['table']}.book_id", "=", "books.book_id")
-            ->where("{$config['table']}.{$config['column']}", $config['id'])
-            ->whereNull("{$config['table']}.checked_out_at")
+        $items = DB::table('carts')
+            ->join('books', "carts.book_id", "=", "books.book_id")
+            ->where("carts.user_id", $user->user_id)
+            ->whereNull("carts.checked_out_at")
             ->select(
-                "{$config['table']}.cart_id",
-                "{$config['table']}.added_at",
+                "carts.cart_id",
+                "carts.added_at",
                 'books.book_id',
                 'books.title',
                 'books.author',
@@ -94,92 +80,35 @@ class CartService
     }
 
     /**
-     * private helper to determine table and id based on user role.
-     */
-    private function getCartConfig($user)
-    {
-        switch (strtolower($user->role)) {
-            case 'student':
-                $id = DB::table('students')->where('user_id', $user->user_id)->value('student_id');
-                return [
-                    'table' => 'carts',
-                    'table_profile' => 'students',
-                    'column' => 'student_id',
-                    'id' => $id
-                ];
-
-            case 'faculty':
-                $id = DB::table('faculty')->where('user_id', $user->user_id)->value('faculty_id');
-                return [
-                    'table' => 'faculty_carts',
-                    'table_profile' => 'faculty',
-                    'column' => 'faculty_id',
-                    'id' => $id
-                ];
-
-            case 'staff':
-                $id = DB::table('staff')->where('user_id', $user->user_id)->value('staff_id');
-                return [
-                    'table' => 'staff_carts',
-                    'table_profile' => 'staff',
-                    'column' => 'staff_id',
-                    'id' => $id
-                ];
-
-            default:
-                return ['table' => null, 'table_profile' => null, 'column' => null, 'id' => null];
-        }
-    }
-
-    /**
-     * remove item from cart
+     * Remove item from centralized cart.
      */
     public function removeFromCart($user, $cartId)
     {
-        $config = $this->getCartConfig($user);
-
-        if (!$config['table']) {
-            return [
-                'success' => false,
-                'message' => 'invalid user role'
-            ];
-        }
-
-        $exists = DB::table($config['table'])
+        $deleted = DB::table('carts')
             ->where('cart_id', $cartId)
-            ->where($config['column'], $config['id'])
-            ->exists();
+            ->where('user_id', $user->user_id)
+            ->delete();
 
-        if (!$exists) {
-            return [
-                'success' => false,
-                'message' => 'item not found'
-            ];
+        if (!$deleted) {
+            return ['success' => false, 'message' => 'Item not found in your cart.'];
         }
 
-        DB::table($config['table'])->where('cart_id', $cartId)->delete();
-
-        return [
-            'success' => true,
-            'message' => 'item removed from the cart'
-        ];
+        return ['success' => true, 'message' => 'Item removed from the cart.'];
     }
 
+    /**
+     * Checkout centralized cart and create a transaction.
+     */
     public function checkout($user)
     {
-        $config = $this->getCartConfig($user);
+        $profileData = $this->getUserProfileData($user);
 
-        if (!$config['id']) {
-            return ['success' => false, 'message' => 'User profile not found'];
+        if (!$profileData['id']) {
+            return ['success' => false, 'message' => 'User profile record not found.'];
         }
 
-        $profile = DB::table($config['table_profile'])
-            ->join('users', "{$config['table_profile']}.user_id", "=", "users.user_id")
-            ->where("{$config['table_profile']}.{$config['column']}", $config['id'])
-            ->select("{$config['table_profile']}.*", "users.email", "users.profile_picture")
-            ->first();
-
-        $validation = $this->isProfileComplete($profile, $user->role);
+        // profile completion check
+        $validation = $this->isProfileComplete($profileData['profile'], $user->role);
         if (!$validation['is_complete']) {
             return [
                 'success' => false,
@@ -187,23 +116,19 @@ class CartService
             ];
         }
 
-        return DB::transaction(function () use ($user, $config) {
-            $cartItems = DB::table($config['table'])
-                ->join('books', "$config[table].book_id", "=", "books.book_id")
-                ->where($config['table'] . '.' . $config['column'], $config['id'])
-                ->select(
-                    'books.book_id',
-                    'books.title',
-                    'books.author',
-                    'books.accession_number',
-                    'books.call_number'
-                )
+        return DB::transaction(function () use ($user, $profileData) {
+            $cartItems = DB::table('carts')
+                ->join('books', "carts.book_id", "=", "books.book_id")
+                ->where('carts.user_id', $user->user_id)
+                ->whereNull('carts.checked_out_at')
+                ->select('books.book_id', 'books.title')
                 ->get();
 
             if ($cartItems->isEmpty()) {
                 return ['success' => false, 'message' => 'Cart is empty'];
             }
 
+            // check book availability in real time
             foreach ($cartItems as $item) {
                 $isUnavailable = DB::table('borrow_transaction_items')
                     ->join('borrow_transactions', 'borrow_transaction_items.transaction_id', '=', 'borrow_transactions.transaction_id')
@@ -217,24 +142,19 @@ class CartService
                 }
             }
 
+            // check existing pending transactions for this specific borrower
             $existingTransaction = DB::table('borrow_transactions')
-                ->where($config['column'], $config['id'])
+                ->where($profileData['column'], $profileData['id'])
                 ->where('status', 'pending')
                 ->first();
 
-            $existingCount = 0;
-            if ($existingTransaction) {
-                $existingCount = DB::table('borrow_transaction_items')
-                    ->where('transaction_id', $existingTransaction->transaction_id)
-                    ->count();
-            }
-
+            $existingCount = $existingTransaction ? DB::table('borrow_transaction_items')->where('transaction_id', $existingTransaction->transaction_id)->count() : 0;
             $newItemsCount = $cartItems->count();
 
             if (($existingCount + $newItemsCount) > 5) {
                 return [
                     'success' => false,
-                    'message' => "Limit reached. You can only borrow a total of 5 books. (You have {$existingCount} pending, adding {$newItemsCount})"
+                    'message' => "Limit reached. Max 5 books total. (Pending: {$existingCount}, Adding: {$newItemsCount})"
                 ];
             }
 
@@ -245,17 +165,11 @@ class CartService
             if ($existingTransaction) {
                 $transactionId = $existingTransaction->transaction_id;
                 $transactionCode = $existingTransaction->transaction_code;
-
-                DB::table('borrow_transactions')
-                    ->where('transaction_id', $transactionId)
-                    ->update([
-                        'expires_at' => $expiresAt,
-                        'generated_at' => $now
-                    ]);
+                DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['expires_at' => $expiresAt, 'generated_at' => $now]);
             } else {
                 $transactionCode = strtoupper(Str::random(13));
                 $transactionId = DB::table('borrow_transactions')->insertGetId([
-                    $config['column']   => $config['id'],
+                    $profileData['column'] => $profileData['id'],
                     'transaction_code' => $transactionCode,
                     'generated_at'     => $now,
                     'expires_at'       => $expiresAt,
@@ -265,72 +179,64 @@ class CartService
             }
 
             foreach ($cartItems as $item) {
-                $existsInTransaction = DB::table('borrow_transaction_items')
-                    ->where('transaction_id', $transactionId)
-                    ->where('book_id', $item->book_id)
-                    ->exists();
-
-                if (!$existsInTransaction) {
-                    DB::table('borrow_transaction_items')->insert([
-                        'transaction_id' => $transactionId,
-                        'book_id'        => $item->book_id,
-                        'returned_at'    => null,
-                    ]);
-                }
+                DB::table('borrow_transaction_items')->updateOrInsert(
+                    ['transaction_id' => $transactionId, 'book_id' => $item->book_id],
+                    ['returned_at' => null]
+                );
             }
 
-            DB::table($config['table'])->where($config['column'], $config['id'])->delete();
-
-            $allBooks = DB::table('borrow_transaction_items')
-                ->join('books', 'borrow_transaction_items.book_id', '=', 'books.book_id')
-                ->where('borrow_transaction_items.transaction_id', $transactionId)
-                ->select('books.book_id', 'books.title', 'books.author', 'books.accession_number', 'books.call_number')
-                ->get();
+            DB::table('carts')->where('user_id', $user->user_id)->delete();
 
             return [
                 'success' => true,
-                'message' => $existingTransaction ? 'Books added to your existing pending transaction' : 'Checkout successful',
+                'message' => 'Checkout successful',
                 'data' => [
                     'transaction_code' => $transactionCode,
                     'expires_at'       => $expiresAt->toDateTimeString(),
-                    'books'            => $allBooks
                 ]
             ];
         });
     }
 
+    /**
+     * Helper to get profile ID and column for transactions.
+     */
+    private function getUserProfileData($user)
+    {
+        $role = strtolower($user->role);
+        $table = match ($role) {
+            'student' => 'students',
+            'faculty' => 'faculty',
+            'staff'   => 'staff',
+            default   => null
+        };
+
+        if (!$table) return ['id' => null, 'column' => null, 'profile' => null];
+
+        $column = $role . '_id';
+        $profile = DB::table($table)->where('user_id', $user->user_id)->first();
+
+        return [
+            'id'     => $profile ? $profile->$column : null,
+            'column' => $column,
+            'profile' => $profile
+        ];
+    }
+
     private function isProfileComplete($profile, $role)
     {
         if (!$profile) return ['is_complete' => false, 'missing_fields' => ['Profile record not found']];
-
         $missing = [];
         $role = strtolower($role);
 
-        if (empty($profile->profile_picture)) {
-            $missing[] = 'Profile Picture';
-        }
-        if (empty($profile->email)) {
-            $missing[] = 'Email Address';
-        }
-
         if ($role === 'student') {
-            if (empty($profile->course_id))         $missing[] = 'Course';
-            if (empty($profile->year_level))        $missing[] = 'Year Level';
-            if (empty($profile->section))           $missing[] = 'Section';
-            if (empty($profile->contact))           $missing[] = 'Contact';
-            if (empty($profile->registration_form)) $missing[] = 'Registration Form';
-        } elseif ($role === 'faculty') {
-            if (empty($profile->college_id))        $missing[] = 'College';
-            if (empty($profile->contact))           $missing[] = 'Contact';
-        } elseif ($role === 'staff') {
-            // Required: Position, Contact
-            if (empty($profile->position))          $missing[] = 'Position';
-            if (empty($profile->contact))           $missing[] = 'Contact';
+            if (empty($profile->course_id)) $missing[] = 'Course';
+            if (empty($profile->year_level)) $missing[] = 'Year Level';
+            if (empty($profile->contact)) $missing[] = 'Contact';
+        } elseif (in_array($role, ['faculty', 'staff'])) {
+            if (empty($profile->contact)) $missing[] = 'Contact';
         }
 
-        return [
-            'is_complete' => empty($missing),
-            'missing_fields' => $missing
-        ];
+        return ['is_complete' => empty($missing), 'missing_fields' => $missing];
     }
 }
