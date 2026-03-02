@@ -12,6 +12,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BorrowingHistoryController;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\AcademicController;
 
 /*
 |--------------------------------------------------------------------------
@@ -52,6 +53,9 @@ Route::post('/upload-qr', function (Request $request) {
 
 Route::middleware('auth:api')->group(function() {
 
+    Route::get('/courses', [AcademicController::class, 'getCourses']);
+    Route::get('/colleges', [AcademicController::class, 'getColleges']);
+    
     Route::post('/changePassword', [AuthController::class, 'changePassword']);
     Route::get('/attendance/history', [AttendanceController::class, 'getHistory']);
     Route::get('/borrowingHistory', [BorrowingHistoryController::class, 'getMyHistory']);
