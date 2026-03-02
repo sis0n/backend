@@ -10,25 +10,24 @@ class BookService
     {
         $query = DB::table('books')
             ->select(
-                'book_id', 
-                'accession_number', 
-                'call_number', 
-                'title', 
-                'author', 
-                'book_publisher', 
-                'year', 
-                'book_edition', 
-                'description', 
-                'book_isbn', 
-                'subject', 
-                'availability', 
-                'quantity', 
+                'book_id',
+                'accession_number',
+                'call_number',
+                'title',
+                'author',
+                'book_publisher',
+                'year',
+                'book_edition',
+                'description',
+                'book_isbn',
+                'subject',
+                'availability',
+                'quantity',
                 'cover'
             )
             ->where('is_archived', 0)
             ->whereNull('deleted_at');
 
-        // 1. Search Filter
         if (!empty($filters['search'])) {
             $searchTerm = '%' . $filters['search'] . '%';
             $query->where(function ($q) use ($searchTerm) {
@@ -38,12 +37,10 @@ class BookService
             });
         }
 
-        // 2. Availability Filter (Dropdown: Available/Borrowed)
         if (!empty($filters['status'])) {
             $query->where('availability', $filters['status']);
         }
 
-        // 3. Sorting Logic
         switch ($filters['sort'] ?? 'newest') {
             case 'az':
                 $query->orderBy('title', 'asc');
@@ -60,7 +57,6 @@ class BookService
                 break;
         }
 
-        // 4. Return Paginated Result (30 items)
         return $query->paginate(30);
     }
 }

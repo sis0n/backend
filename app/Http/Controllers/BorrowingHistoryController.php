@@ -19,13 +19,6 @@ class BorrowingHistoryController extends Controller
     {
         $user = $request->user();
 
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Unauthorized'
-            ], 401);
-        }
-
         $result = $this->historyService->getHistory($user);
 
         if (!$result['success']) {
@@ -35,6 +28,18 @@ class BorrowingHistoryController extends Controller
             ], 404);
         }
 
-        return response()->json($result, 200);
+        $records = $result['records'];
+
+        return response()->json([
+            'success' => true,
+            'statistics' => $result['statistics'],
+            'data' => $records->items(),
+            'pagination' => [
+                'current_page' => $records->currentPage(),
+                'last_page' => $records->lastPage(),
+                'total' => $records->total(),
+                'has_more' => $records->hasMorePages()
+            ]
+        ]);
     }
 }

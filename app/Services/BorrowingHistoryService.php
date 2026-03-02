@@ -48,18 +48,19 @@ class BorrowingHistoryService
                 DB::raw("CONCAT(librarian_user.first_name, ' ', librarian_user.last_name) as processed_by")
             )
             ->orderBy('trans.generated_at', 'desc')
-            ->get()
-            ->map(function ($record) {
-                return [
-                    'title' => $record->title,
-                    'author' => $record->author,
-                    'borrowed_at' => $record->borrowed_at ? Carbon::parse($record->borrowed_at)->toDateTimeString() : 'N/A',
-                    'due_date' => $record->due_date ? Carbon::parse($record->due_date)->toDateTimeString() : 'N/A',
-                    'returned_at' => $record->returned_at ? Carbon::parse($record->returned_at)->toDateTimeString() : 'Not yet returned',
-                    'librarian' => $record->processed_by ?? 'N/A',
-                    'status' => $this->resolveStatus($record)
-                ];
-            });
+            ->paginate(5);
+
+        $records->getCollection()->transform(function ($record) {
+            return [
+                'title' => $record->title,
+                'author' => $record->author,
+                'borrowed_at' => $record->borrowed_at ? Carbon::parse($record->borrowed_at)->toDateTimeString() : 'N/A',
+                'due_date' => $record->due_date ? Carbon::parse($record->due_date)->toDateTimeString() : 'N/A',
+                'returned_at' => $record->returned_at ? Carbon::parse($record->returned_at)->toDateTimeString() : 'Not yet returned',
+                'librarian' => $record->processed_by ?? 'N/A',
+                'status' => $this->resolveStatus($record)
+            ];
+        });
 
         return [
             'success' => true,
