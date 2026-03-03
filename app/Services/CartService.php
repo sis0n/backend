@@ -281,6 +281,19 @@ class CartService
         ];
     }
 
+    public function removeMultipleFromCart($user, array $cartIds)
+    {
+        $deletedCount = DB::table('carts')
+            ->whereIn('cart_id', $cartIds)
+            ->where('user_id', $user->user_id)
+            ->delete();
+
+        return [
+            'success' => true,
+            'message' => "successfully removed {$deletedCount} items from the cart."
+        ];
+    }
+
     /**
      * Helper to get profile ID and column for transactions.
      */

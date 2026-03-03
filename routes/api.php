@@ -63,6 +63,7 @@ Route::middleware('auth:api')->group(function() {
     Route::get('/cart/status', [CartController::class, 'checkStatus']);
     Route::delete('/cart/{id}', [CartController::class, 'destroy']);
     Route::post('/cart/add', [CartController::class, 'add']);
+    Route::post('/cart/bulkDelete', [CartController::class, 'bulkDestroy']);
     Route::get('/cart', [CartController::class, 'index']);
     Route::get('/books', [BookController::class, 'index']);
     Route::get('/profile', [ProfileController::class, 'show']);

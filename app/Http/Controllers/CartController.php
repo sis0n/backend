@@ -63,4 +63,16 @@ class CartController extends Controller
 
         return response()->json($result);
     }
+
+    public function bulkDestroy(Request $request)
+    {
+        $request->validate([
+            'cart_ids' => 'required|array',
+            'cart_ids.*' => 'integer'
+        ]);
+
+        $result = $this->cartService->removeMultipleFromCart($request->user(), $request->cart_ids);
+
+        return response()->json($result);
+    }
 }
