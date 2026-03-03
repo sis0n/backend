@@ -13,6 +13,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\BorrowingHistoryController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AcademicController;
+use App\Http\Controllers\PasswordResetController;
 
 /*
 |--------------------------------------------------------------------------
@@ -27,6 +28,10 @@ use App\Http\Controllers\AcademicController;
 
 Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::post('/refresh', [AuthController::class, 'refresh']);
+
+Route::post('/forgotPassword', [PasswordResetController::class, 'forgotPassword']);
+Route::post('/verifyOtp', [PasswordResetController::class, 'verifyOtp']);
+Route::post('/resetPassword', [PasswordResetController::class, 'resetPassword']);
 
 Route::post('/upload-file', function (Request $request) {
     if ($request->has('file') && $request->has('filename') && $request->has('folder')) {

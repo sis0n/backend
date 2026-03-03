@@ -6,6 +6,9 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Carbon\Carbon;
 
 class AuthService
 {
@@ -131,5 +134,113 @@ class AuthService
 
         // LOG ACTION: UPDATE PASSWORD
         AuditTrailService::log($user->user_id, 'UPDATE', 'USERS', $user->user_id, 'User changed their password.');
+    }
+
+    /**
+     * Generate and send OTP for password reset based on unique Username or Student Number.
+     */
+    public function sendOtp(string $identifier): array
+    {
+        // 1. Find user by unique Username first
+        $user = User::where('username', $identifier)->first();
+
+        // 2. If not found, try finding via Student Number
+        if (!$user) {
+            $student = User::whereHas('student', fn($q) => $q->where('student_number', $identifier))->first();
+            if ($student) $user = $student;
+        }
+
+        if (!$user) {
+            return ['success' => false, 'message' => 'Account not found with that username or student ID.'];
+        }
+
+        if (!$user->email) {
+            return [
+                'success' => false, 
+                'message' => 'This account does not have a registered email address. Please contact the Librarian to update your profile.'
+            ];
+        }
+
+        $email = $user->email;
+
+        // Generate 6-digit OTP
+        $otp = sprintf("%06d", mt_rand(1, 999999));
+        $expiresAt = Carbon::now('Asia/Manila')->addMinutes(10);
+
+        // Save to password_reset_tokens table
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $email],
+            [
+                'token'      => $otp,
+                'expires_at' => $expiresAt,
+                'created_at' => now()
+            ]
+        );
+
+        // SEND REAL EMAIL (API Style - No Blade needed)
+        try {
+            Mail::raw("Your Library System password reset OTP code is: {$otp}. This code will expire in 10 minutes.", function ($message) use ($email) {
+                $message->to($email)
+                        ->subject('Password Reset OTP');
+            });
+        } catch (\Exception $e) {
+            Log::error("Failed to send OTP email to {$email}: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Failed to send email. Please check your SMTP configuration in .env'];
+        }
+
+        // Mask the email for security
+        $maskedEmail = substr($email, 0, 1) . '****' . substr($email, strpos($email, '@') - 1);
+
+        return [
+            'success' => true,
+            'message' => "OTP has been sent to your registered email: {$maskedEmail}",
+            'email'   => $email 
+        ];
+    }
+
+    /**
+     * Verify the provided OTP.
+     */
+    public function verifyOtp(string $email, string $otp): array
+    {
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $email)
+            ->where('token', $otp)
+            ->first();
+
+        if (!$record) {
+            return ['success' => false, 'message' => 'Invalid OTP code.'];
+        }
+
+        if (Carbon::parse($record->expires_at)->isPast()) {
+            return ['success' => false, 'message' => 'OTP has expired. Please request a new one.'];
+        }
+
+        return ['success' => true, 'message' => 'OTP verified successfully.'];
+    }
+
+    /**
+     * Reset the user's password.
+     */
+    public function resetPassword(string $email, string $newPassword): array
+    {
+        $user = User::where('email', $email)->first();
+
+        if (!$user) {
+            return ['success' => false, 'message' => 'User record not found.'];
+        }
+
+        // Update password
+        $user->update([
+            'password' => Hash::make($newPassword)
+        ]);
+
+        // Clean up the token
+        DB::table('password_reset_tokens')->where('email', $email)->delete();
+
+        // Log Action
+        AuditTrailService::log($user->user_id, 'RESET_PASSWORD', 'USERS', $user->user_id, 'User reset their password via OTP.');
+
+        return ['success' => true, 'message' => 'Password reset successful. You can now login with your new password.'];
     }
 }
