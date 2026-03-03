@@ -37,6 +37,7 @@ class BorrowingHistoryService
             ->join('books', 'items.book_id', '=', 'books.book_id')
             ->leftJoin('users as librarian_user', 'trans.librarian_id', '=', 'librarian_user.user_id')
             ->where('trans.' . $column, $profileId)
+            ->whereIn('trans.status', ['borrowed', 'returned', 'overdue'])
             ->select(
                 'books.title',
                 'books.author',
@@ -47,7 +48,7 @@ class BorrowingHistoryService
                 'trans.status',
                 DB::raw("CONCAT(librarian_user.first_name, ' ', librarian_user.last_name) as processed_by")
             )
-            ->orderBy('trans.generated_at', 'desc')
+            ->orderBy('trans.borrowed_at', 'desc')
             ->paginate(5);
 
         $records->getCollection()->transform(function ($record) {
@@ -96,10 +97,6 @@ class BorrowingHistoryService
 
         if ($record->status === 'overdue' || ($record->status === 'borrowed' && Carbon::parse($record->due_date)->isPast())) {
             return 'overdue';
-        }
-
-        if ($record->status === 'pending' && Carbon::parse($record->expires_at)->isPast()) {
-            return 'expired';
         }
 
         return $record->status;
