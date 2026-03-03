@@ -11,26 +11,30 @@ use Illuminate\Support\Facades\Storage;
 class CartService
 {
     /**
+     * Get policy for a specific role.
+     */
+    private function getPolicy($role)
+    {
+        return DB::table('library_policies')
+            ->where('role', strtolower($role))
+            ->first();
+    }
+
+    /**
      * Add a book to the centralized 'carts' table.
+     * Limit removed here as per user request.
      */
     public function addToCart($user, $bookId)
     {
         $userId = $user->user_id;
 
-        $currentCartCount = DB::table('carts')
-            ->where('user_id', $userId)
-            ->whereNull('checked_out_at')
-            ->count();
-
-        if ($currentCartCount >= 5) {
-            return ['status' => 'error', 'message' => 'Limit reached! You can only add up to 5 books in your cart.'];
-        }
-
+        // Check book availability
         $book = DB::table('books')->where('book_id', $bookId)->first();
         if (!$book || $book->availability !== 'available' || $book->quantity <= 0) {
             return ['status' => 'error', 'message' => 'This book is currently unavailable for borrowing.'];
         }
 
+        // Check if already in cart
         $exists = DB::table('carts')
             ->where('user_id', $userId)
             ->where('book_id', $bookId)
@@ -41,6 +45,7 @@ class CartService
             return ['status' => 'error', 'message' => 'This book is already in your cart.'];
         }
 
+        // Insert into centralized carts table
         DB::table('carts')->insert([
             'user_id' => $userId,
             'book_id' => $bookId,
@@ -96,7 +101,7 @@ class CartService
     }
 
     /**
-     * Checkout process with QR code generation and Audit Logging.
+     * Checkout process with dynamic policies, QR code generation and Audit Logging.
      */
     public function checkout($user)
     {
@@ -106,6 +111,7 @@ class CartService
             return ['success' => false, 'message' => 'User profile record not found.'];
         }
 
+        // profile completion check
         $validation = $this->isProfileComplete($profileData['profile'], $user->role);
         if (!$validation['is_complete']) {
             return [
@@ -114,7 +120,11 @@ class CartService
             ];
         }
 
-        return DB::transaction(function () use ($user, $profileData) {
+        $policy = $this->getPolicy($user->role);
+        $maxBooks = $policy ? $policy->max_books : 5;
+        $duration = $policy ? $policy->borrow_duration_days : 3;
+
+        return DB::transaction(function () use ($user, $profileData, $maxBooks, $duration) {
             $cartItems = DB::table('carts')
                 ->join('books', "carts.book_id", "=", "books.book_id")
                 ->where('carts.user_id', $user->user_id)
@@ -126,6 +136,7 @@ class CartService
                 return ['success' => false, 'message' => 'Cart is empty'];
             }
 
+            // Real-time availability check
             foreach ($cartItems as $item) {
                 $isUnavailable = DB::table('borrow_transaction_items')
                     ->join('borrow_transactions', 'borrow_transaction_items.transaction_id', '=', 'borrow_transactions.transaction_id')
@@ -139,6 +150,7 @@ class CartService
                 }
             }
 
+            // Check existing pending transactions for this specific borrower
             $existingTransaction = DB::table('borrow_transactions')
                 ->where($profileData['column'], $profileData['id'])
                 ->where('status', 'pending')
@@ -147,21 +159,22 @@ class CartService
             $existingCount = $existingTransaction ? DB::table('borrow_transaction_items')->where('transaction_id', $existingTransaction->transaction_id)->count() : 0;
             $newItemsCount = $cartItems->count();
 
-            if (($existingCount + $newItemsCount) > 5) {
+            // DYNAMIC CHECKOUT LIMIT APPLIED HERE
+            if (($existingCount + $newItemsCount) > $maxBooks) {
                 return [
                     'success' => false,
-                    'message' => "Limit reached. Max 5 books total. (Pending: {$existingCount}, Adding: {$newItemsCount})"
+                    'message' => "Limit reached. Your role allows max {$maxBooks} books total. (You have {$existingCount} pending, and trying to checkout {$newItemsCount} more)"
                 ];
             }
 
             $now = Carbon::now('Asia/Manila');
             $expiresAt = $now->copy()->addMinutes(15);
-            $dueDate = $now->copy()->addDays(3);
+            $dueDate = $now->copy()->addDays($duration);
 
             if ($existingTransaction) {
                 $transactionId = $existingTransaction->transaction_id;
                 $transactionCode = $existingTransaction->transaction_code;
-                DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['expires_at' => $expiresAt, 'generated_at' => $now]);
+                DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['expires_at' => $expiresAt, 'generated_at' => $now, 'due_date' => $dueDate]);
             } else {
                 $transactionCode = strtoupper(Str::random(13));
                 $transactionId = DB::table('borrow_transactions')->insertGetId([
@@ -181,6 +194,7 @@ class CartService
                 );
             }
 
+            // --- QR CODE GENERATION (SVG) ---
             $qrFolder = 'uploads/qrcodes';
             $qrFileName = $transactionCode . '.svg';
             $qrPath = $qrFolder . '/' . $qrFileName;
@@ -194,14 +208,16 @@ class CartService
 
             DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['qrcode' => $qrPath]);
 
+            // Clear cart
             DB::table('carts')->where('user_id', $user->user_id)->delete();
 
+            // LOG ACTION: CHECKOUT
             AuditTrailService::log(
                 $user->user_id,
                 'CHECKOUT',
                 'TRANSACTIONS',
                 $transactionCode,
-                "User checked out {$newItemsCount} book(s). Status: Pending Approval. Transaction Code: {$transactionCode}"
+                "User checked out {$newItemsCount} book(s). Transaction Code: {$transactionCode}"
             );
 
             return [
