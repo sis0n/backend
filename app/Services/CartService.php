@@ -22,7 +22,6 @@ class CartService
 
     /**
      * Add a book to the centralized 'carts' table.
-     * Limit removed here as per user request.
      */
     public function addToCart($user, $bookId)
     {
@@ -111,12 +110,12 @@ class CartService
             return ['success' => false, 'message' => 'User profile record not found.'];
         }
 
-        // profile completion check
-        $validation = $this->isProfileComplete($profileData['profile'], $user->role);
+        // profile completion check (STRICT VALIDATION)
+        $validation = $this->isProfileComplete($user, $profileData['profile']);
         if (!$validation['is_complete']) {
             return [
                 'success' => false,
-                'message' => 'Incomplete profile: ' . implode(', ', $validation['missing_fields'])
+                'message' => 'Incomplete profile requirements: ' . implode(', ', $validation['missing_fields'])
             ];
         }
 
@@ -136,7 +135,6 @@ class CartService
                 return ['success' => false, 'message' => 'Cart is empty'];
             }
 
-            // Real-time availability check
             foreach ($cartItems as $item) {
                 $isUnavailable = DB::table('borrow_transaction_items')
                     ->join('borrow_transactions', 'borrow_transaction_items.transaction_id', '=', 'borrow_transactions.transaction_id')
@@ -150,7 +148,6 @@ class CartService
                 }
             }
 
-            // Check existing pending transactions for this specific borrower
             $existingTransaction = DB::table('borrow_transactions')
                 ->where($profileData['column'], $profileData['id'])
                 ->where('status', 'pending')
@@ -159,11 +156,10 @@ class CartService
             $existingCount = $existingTransaction ? DB::table('borrow_transaction_items')->where('transaction_id', $existingTransaction->transaction_id)->count() : 0;
             $newItemsCount = $cartItems->count();
 
-            // DYNAMIC CHECKOUT LIMIT APPLIED HERE
             if (($existingCount + $newItemsCount) > $maxBooks) {
                 return [
                     'success' => false,
-                    'message' => "Limit reached. Your role allows max {$maxBooks} books total. (You have {$existingCount} pending, and trying to checkout {$newItemsCount} more)"
+                    'message' => "Limit reached. Your role allows max {$maxBooks} books total. (Pending: {$existingCount}, Adding: {$newItemsCount})"
                 ];
             }
 
@@ -194,7 +190,6 @@ class CartService
                 );
             }
 
-            // --- QR CODE GENERATION (SVG) ---
             $qrFolder = 'uploads/qrcodes';
             $qrFileName = $transactionCode . '.svg';
             $qrPath = $qrFolder . '/' . $qrFileName;
@@ -208,10 +203,8 @@ class CartService
 
             DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['qrcode' => $qrPath]);
 
-            // Clear cart
             DB::table('carts')->where('user_id', $user->user_id)->delete();
 
-            // LOG ACTION: CHECKOUT
             AuditTrailService::log(
                 $user->user_id,
                 'CHECKOUT',
@@ -239,7 +232,6 @@ class CartService
     {
         $now = Carbon::now('Asia/Manila');
         
-        // Expire old transactions
         DB::table('borrow_transactions')
             ->where('status', 'pending')
             ->where('expires_at', '<', $now)
@@ -265,7 +257,6 @@ class CartService
             'role' => $user->role,
         ];
 
-        // Specific details based on role
         if ($user->role === 'student') {
             $course = DB::table('courses')->where('course_id', $profileData['profile']->course_id)->first();
             $userData['student_number'] = $profileData['profile']->student_number;
@@ -310,9 +301,6 @@ class CartService
         ];
     }
 
-    /**
-     * Helper to get profile ID and column for transactions.
-     */
     private function getUserProfileData($user)
     {
         $role = strtolower($user->role);
@@ -335,20 +323,43 @@ class CartService
         ];
     }
 
-    private function isProfileComplete($profile, $role)
+    /**
+     * Strict Validation for checkout.
+     */
+    private function isProfileComplete($user, $profile)
     {
         if (!$profile) return ['is_complete' => false, 'missing_fields' => ['Profile record not found']];
+        
         $missing = [];
-        $role = strtolower($role);
+        $role = strtolower($user->role);
 
+        // Common Fields (From Users Table)
+        if (empty($user->profile_picture)) $missing[] = 'Profile Picture';
+        if (empty($user->email))           $missing[] = 'Email Address';
+
+        // Role Specific Fields (From Profile Tables)
         if ($role === 'student') {
-            if (empty($profile->course_id)) $missing[] = 'Course';
-            if (empty($profile->year_level)) $missing[] = 'Year Level';
-            if (empty($profile->contact)) $missing[] = 'Contact';
-        } elseif (in_array($role, ['faculty', 'staff'])) {
-            if (empty($profile->contact)) $missing[] = 'Contact';
+            if (empty($profile->course_id))         $missing[] = 'Course';
+            if (empty($profile->year_level))        $missing[] = 'Year Level';
+            if (empty($profile->section))           $missing[] = 'Section';
+            if (empty($profile->contact))           $missing[] = 'Contact Number';
+            if (empty($profile->registration_form)) $missing[] = 'Registration Form';
+        } elseif ($role === 'faculty') {
+            if (empty($profile->college_id))        $missing[] = 'Department/College';
+            if (empty($profile->contact))           $missing[] = 'Contact Number';
+        } elseif ($role === 'staff') {
+            if (empty($profile->position))          $missing[] = 'Position';
+            if (empty($profile->contact))           $missing[] = 'Contact Number';
         }
 
-        return ['is_complete' => empty($missing), 'missing_fields' => $missing];
+        // Global check for profile_updated flag
+        if ($profile->profile_updated == 0) {
+            $missing[] = 'General Profile Setup';
+        }
+
+        return [
+            'is_complete' => empty($missing),
+            'missing_fields' => $missing
+        ];
     }
 }
