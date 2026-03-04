@@ -32,8 +32,9 @@ class StaffProfileService
 
         if (!$result) return ['error' => 'Staff not found'];
 
-        $result['is_qualified'] = !empty($result['first_name']) && !empty($result['position']) &&
-            !empty($result['contact']);
+        $result['is_qualified'] = !empty($result['first_name']) && !empty($result['last_name']) &&
+            !empty($result['position']) && !empty($result['contact']) &&
+            !empty($result['profile_picture']) && $result['profile_updated'] == 1;
         return $result;
     }
 

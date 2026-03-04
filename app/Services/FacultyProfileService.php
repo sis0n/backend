@@ -39,7 +39,8 @@ class FacultyProfileService
         }
 
         $result['is_qualified'] = !empty($result['first_name']) && !empty($result['last_name']) &&
-            !empty($result['college_id']) && !empty($result['contact']);
+            !empty($result['college_id']) && !empty($result['contact']) &&
+            !empty($result['profile_picture']) && $result['profile_updated'] == 1;
         return $result;
     }
 

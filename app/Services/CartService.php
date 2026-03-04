@@ -264,7 +264,9 @@ class CartService
             $userData['section']        = $profileData['profile']->section;
             $userData['course']         = $course ? $course->course_code : 'N/A';
         } elseif ($user->role === 'faculty') {
+            $college = DB::table('colleges')->where('college_id', $profileData['profile']->college_id)->first();
             $userData['unique_id'] = $profileData['profile']->unique_faculty_id;
+            $userData['college']   = $college ? $college->college_code : 'N/A';
         } elseif ($user->role === 'staff') {
             $userData['employee_id'] = $profileData['profile']->employee_id;
             $userData['position']    = $profileData['profile']->position;
