@@ -58,18 +58,20 @@ class PasswordResetController extends Controller
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'email'    => 'required|email',
-            'otp'      => 'required|string|size:6',
-            'password' => 'required|string|min:8|confirmed',
+            'email'       => 'required|email',
+            'reset_token' => 'required|string',
+            'password'    => 'required|string|min:8|confirmed',
         ]);
 
-        // Double check OTP validity before resetting
-        $otpCheck = $this->authService->verifyOtp($request->email, $request->otp);
-        if (!$otpCheck['success']) {
-            return response()->json($otpCheck, 400);
-        }
+        $result = $this->authService->resetPassword(
+            $request->email,
+            $request->reset_token,
+            $request->password
+        );
 
-        $result = $this->authService->resetPassword($request->email, $request->password);
+        if (!$result['success']) {
+            return response()->json($result, 400);
+        }
 
         return response()->json($result, 200);
     }

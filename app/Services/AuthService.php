@@ -35,7 +35,6 @@ class AuthService
 
         $refreshToken = $tokenResult->token->id; // placeholder for refresh token logic
 
-        // LOG ACTION: LOGIN
         AuditTrailService::log($user->user_id, 'LOGIN', 'AUTH', null, 'User logged in successfully via Mobile App.');
 
         return [
@@ -74,14 +73,12 @@ class AuthService
 
     public function refreshToken(string $refreshTokenId): array
     {
-        // Find the token record in the database using the ID provided as refresh_token
         $token = \Laravel\Passport\Token::find($refreshTokenId);
 
         if (!$token) {
             throw new \Exception('Invalid refresh token.');
         }
 
-        // Optional: Check if revoked
         if ($token->revoked) {
             throw new \Exception('Token has been revoked.');
         }
@@ -92,10 +89,8 @@ class AuthService
             throw new \Exception('User not found.');
         }
 
-        // Revoke the old token
         $token->revoke();
 
-        // Create a new token
         $newTokenResult = $user->createToken('AuthToken');
 
         return [
@@ -111,7 +106,6 @@ class AuthService
         $token = $user->token();
 
         if ($token) {
-            // LOG ACTION: LOGOUT
             AuditTrailService::log($user->user_id, 'LOGOUT', 'AUTH', null, 'User logged out.');
 
             $token->revoke();
@@ -132,7 +126,6 @@ class AuthService
             'password' => Hash::make($newPassword)
         ]);
 
-        // LOG ACTION: UPDATE PASSWORD
         AuditTrailService::log($user->user_id, 'UPDATE', 'USERS', $user->user_id, 'User changed their password.');
     }
 
@@ -141,10 +134,8 @@ class AuthService
      */
     public function sendOtp(string $identifier): array
     {
-        // 1. Find user by unique Username first
         $user = User::where('username', $identifier)->first();
 
-        // 2. If not found, try finding via Student Number
         if (!$user) {
             $student = User::whereHas('student', fn($q) => $q->where('student_number', $identifier))->first();
             if ($student) $user = $student;
@@ -156,18 +147,16 @@ class AuthService
 
         if (!$user->email) {
             return [
-                'success' => false, 
+                'success' => false,
                 'message' => 'This account does not have a registered email address. Please contact the Librarian to update your profile.'
             ];
         }
 
         $email = $user->email;
 
-        // Generate 6-digit OTP
         $otp = sprintf("%06d", mt_rand(1, 999999));
         $expiresAt = Carbon::now('Asia/Manila')->addMinutes(10);
 
-        // Save to password_reset_tokens table
         DB::table('password_reset_tokens')->updateOrInsert(
             ['email' => $email],
             [
@@ -177,29 +166,27 @@ class AuthService
             ]
         );
 
-        // SEND REAL EMAIL (API Style - No Blade needed)
         try {
             Mail::raw("Your Library System password reset OTP code is: {$otp}. This code will expire in 10 minutes.", function ($message) use ($email) {
                 $message->to($email)
-                        ->subject('Password Reset OTP');
+                    ->subject('Password Reset OTP');
             });
         } catch (\Exception $e) {
             Log::error("Failed to send OTP email to {$email}: " . $e->getMessage());
             return ['success' => false, 'message' => 'Failed to send email. Please check your SMTP configuration in .env'];
         }
 
-        // Mask the email for security
         $maskedEmail = substr($email, 0, 1) . '****' . substr($email, strpos($email, '@') - 1);
 
         return [
             'success' => true,
             'message' => "OTP has been sent to your registered email: {$maskedEmail}",
-            'email'   => $email 
+            'email'   => $email
         ];
     }
 
     /**
-     * Verify the provided OTP.
+     * Verify the provided OTP and return a temporary reset token.
      */
     public function verifyOtp(string $email, string $otp): array
     {
@@ -216,31 +203,57 @@ class AuthService
             return ['success' => false, 'message' => 'OTP has expired. Please request a new one.'];
         }
 
-        return ['success' => true, 'message' => 'OTP verified successfully.'];
+        $resetToken = \Illuminate\Support\Str::random(6);
+
+        DB::table('password_reset_tokens')->where('email', $email)->update([
+            'token' => $resetToken,
+            'expires_at' => Carbon::now('Asia/Manila')->addMinutes(15)
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'OTP verified successfully.',
+            'reset_token' => $resetToken
+        ];
     }
 
     /**
-     * Reset the user's password.
+     * Reset the user's password using the temporary reset token.
      */
-    public function resetPassword(string $email, string $newPassword): array
+    public function resetPassword(string $email, string $resetToken, string $newPassword): array
     {
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $email)
+            ->where('token', $resetToken)
+            ->first();
+
+        if (!$record) {
+            return ['success' => false, 'message' => 'Invalid or expired reset token.'];
+        }
+
         $user = User::where('email', $email)->first();
 
         if (!$user) {
-            return ['success' => false, 'message' => 'User record not found.'];
+            return ['success' => false, 'message' => 'User record not found for this email.'];
         }
 
-        // Update password
-        $user->update([
-            'password' => Hash::make($newPassword)
-        ]);
+        try {
+            DB::beginTransaction();
 
-        // Clean up the token
-        DB::table('password_reset_tokens')->where('email', $email)->delete();
+            DB::table('users')->where('user_id', $user->user_id)->update([
+                'password' => Hash::make($newPassword),
+                'updated_at' => now()
+            ]);
 
-        // Log Action
-        AuditTrailService::log($user->user_id, 'RESET_PASSWORD', 'USERS', $user->user_id, 'User reset their password via OTP.');
+            DB::table('password_reset_tokens')->where('email', $email)->delete();
 
-        return ['success' => true, 'message' => 'Password reset successful. You can now login with your new password.'];
+            AuditTrailService::log($user->user_id, 'RESET_PASSWORD', 'USERS', $user->user_id, 'User reset their password via OTP.');
+
+            DB::commit();
+            return ['success' => true, 'message' => 'Password reset successful. You can now login with your new password.'];
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return ['success' => false, 'message' => 'Failed to update password: ' . $e->getMessage()];
+        }
     }
 }
