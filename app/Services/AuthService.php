@@ -27,6 +27,12 @@ class AuthService
             ]);
         }
 
+        if (!in_array($user->role, ['student', 'faculty', 'staff'])) {
+            throw ValidationException::withMessages([
+                'identifier' => ['Access denied. This mobile application is restricted to Students, Faculty, and Staff only.']
+            ]);
+        }
+
         $user->tokens->each(fn($token) => $token->delete());
 
         $tokenResult = $user->createToken('AuthToken');
@@ -143,6 +149,10 @@ class AuthService
 
         if (!$user) {
             return ['success' => false, 'message' => 'Account not found with that username or student ID.'];
+        }
+
+        if (!in_array($user->role, ['student', 'faculty', 'staff'])) {
+            return ['success' => false, 'message' => 'Access denied. Only Students, Faculty, and Staff can reset their password via mobile.'];
         }
 
         if (!$user->email) {

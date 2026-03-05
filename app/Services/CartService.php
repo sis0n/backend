@@ -27,13 +27,11 @@ class CartService
     {
         $userId = $user->user_id;
 
-        // Check book availability
         $book = DB::table('books')->where('book_id', $bookId)->first();
         if (!$book || $book->availability !== 'available' || $book->quantity <= 0) {
             return ['status' => 'error', 'message' => 'This book is currently unavailable for borrowing.'];
         }
 
-        // Check if already in cart
         $exists = DB::table('carts')
             ->where('user_id', $userId)
             ->where('book_id', $bookId)
@@ -44,7 +42,6 @@ class CartService
             return ['status' => 'error', 'message' => 'This book is already in your cart.'];
         }
 
-        // Insert into centralized carts table
         DB::table('carts')->insert([
             'user_id' => $userId,
             'book_id' => $bookId,
@@ -102,7 +99,7 @@ class CartService
     /**
      * Checkout process with dynamic policies, QR code generation and Audit Logging.
      */
-    public function checkout($user)
+    public function checkout($user, array $cartIds)
     {
         $profileData = $this->getUserProfileData($user);
 
@@ -123,16 +120,21 @@ class CartService
         $maxBooks = $policy ? $policy->max_books : 5;
         $duration = $policy ? $policy->borrow_duration_days : 3;
 
-        return DB::transaction(function () use ($user, $profileData, $maxBooks, $duration) {
+        return DB::transaction(function () use ($user, $profileData, $maxBooks, $duration, $cartIds) {
             $cartItems = DB::table('carts')
                 ->join('books', "carts.book_id", "=", "books.book_id")
                 ->where('carts.user_id', $user->user_id)
+                ->whereIn('carts.cart_id', $cartIds)
                 ->whereNull('carts.checked_out_at')
                 ->select('books.book_id', 'books.title')
                 ->get();
 
             if ($cartItems->isEmpty()) {
-                return ['success' => false, 'message' => 'Cart is empty'];
+                return ['success' => false, 'message' => 'The selected items are no longer in your cart or were already checked out.'];
+            }
+
+            if ($cartItems->count() !== count($cartIds)) {
+                return ['success' => false, 'message' => 'Some selected items are no longer available in your cart.'];
             }
 
             foreach ($cartItems as $item) {
@@ -203,7 +205,7 @@ class CartService
 
             DB::table('borrow_transactions')->where('transaction_id', $transactionId)->update(['qrcode' => $qrPath]);
 
-            DB::table('carts')->where('user_id', $user->user_id)->delete();
+            DB::table('carts')->whereIn('cart_id', $cartIds)->delete();
 
             AuditTrailService::log(
                 $user->user_id,
@@ -231,7 +233,7 @@ class CartService
     public function checkStatus($user): array
     {
         $now = Carbon::now('Asia/Manila');
-        
+
         DB::table('borrow_transactions')
             ->where('status', 'pending')
             ->where('expires_at', '<', $now)
@@ -331,7 +333,7 @@ class CartService
     private function isProfileComplete($user, $profile)
     {
         if (!$profile) return ['is_complete' => false, 'missing_fields' => ['Profile record not found']];
-        
+
         $missing = [];
         $role = strtolower($user->role);
 

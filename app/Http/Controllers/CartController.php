@@ -52,7 +52,12 @@ class CartController extends Controller
 
     public function checkout(Request $request)
     {
-        $result = $this->cartService->checkout($request->user());
+        $request->validate([
+            'cart_ids' => 'required|array',
+            'cart_ids.*' => 'integer'
+        ]);
+
+        $result = $this->cartService->checkout($request->user(), $request->cart_ids);
 
         return response()->json($result, $result['success'] ? 200 : 400);
     }
