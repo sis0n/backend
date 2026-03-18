@@ -1,0 +1,43 @@
+name: 🚀 Deploy Laravel API to Hostinger via FTP
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4.1.0
+
+      - name: 🚀 Deploy Laravel API to Hostinger
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.LARAVEL_FTP_SERVER }}
+          username: ${{ secrets.LARAVEL_FTP_USERNAME }}
+          password: ${{ secrets.LARAVEL_FTP_PASSWORD }}
+          port: 21
+          protocol: ftp
+          local-dir: ./
+          server-dir: /laravel-api/
+          state-name: .ftp-deploy-sync-state-api.json
+          dangerous-clean-slate: false
+          security: loose
+          exclude: |
+            **/.git/**
+            **/.github/**
+            **/vendor/**
+            **/node_modules/**
+            **/.env
+            **/.env.example
+            **/composer.lock
+            **/storage/logs/**
+            **/storage/framework/cache/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/tests/**
+            **/README.md
