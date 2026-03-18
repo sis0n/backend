@@ -17,9 +17,9 @@ jobs:
       - name: 🚀 Deploy Laravel API to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.LARAVEL_FTP_SERVER }}
-          username: ${{ secrets.LARAVEL_FTP_USERNAME }}
-          password: ${{ secrets.LARAVEL_FTP_PASSWORD }}
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
           port: 21
           protocol: ftp
           local-dir: ./
